@@ -1,0 +1,206 @@
+# Enhanced SAM3 Training Configuration Template
+# 
+# This template shows how to configure enhanced training with class imbalance handling,
+# per-iteration validation, visualization, and improved logging.
+
+# Original trainer configuration (add to your existing config)
+trainer:
+  # ... existing trainer configuration ...
+  pass
+
+# ============================================================================
+# ENHANCED TRAINING CONFIGURATION
+# ============================================================================
+
+enhanced_training:
+  
+  # Class Imbalance Handling
+  class_imbalance:
+    enabled: true
+    """Enable class imbalance handling"""
+    
+    strategy: "weighted_sampling"
+    """Strategy for handling imbalance:
+    - weighted_sampling: Weight sampling by inverse class frequency
+    - focal_loss: Use focal loss (requires model support)
+    - class_weighting: Apply class weights to loss
+    """
+    
+    weight_power: 1.0
+    """Power for computing weights (higher = stronger correction)"""
+    
+    analyze_statistics: true
+    """Analyze and log class distribution statistics"""
+  
+  # Per-Iteration Validation Configuration
+  per_iteration_validation:
+    enabled: true
+    """Enable validation checks during training"""
+    
+    frequency: 50
+    """Run validation every N iterations"""
+    
+    num_batches: 5
+    """Number of validation batches to use per validation run"""
+    
+    log_metrics: true
+    """Log validation metrics to tensorboard"""
+  
+  # Visualization Configuration
+  visualization:
+    enabled: true
+    """Enable visualization of predictions"""
+    
+    frequency: 100
+    """Generate visualization every N iterations"""
+    
+    num_samples: 4
+    """Number of samples to visualize per batch"""
+    
+    save_dir: "./logs/visualizations"
+    """Directory to save visualization images"""
+    
+    overlay_alpha: 0.6
+    """Alpha blending factor for mask overlay (0-1)"""
+    
+    draw_bboxes: true
+    """Draw bounding boxes on visualization"""
+    
+    draw_centroids: true
+    """Draw centroids on visualization"""
+  
+  # Enhanced Logging Configuration
+  enhanced_logging:
+    enabled: true
+    """Enable enhanced logging with aggregation"""
+    
+    log_every_n_iterations: 50
+    """Aggregate and log metrics every N iterations instead of per-image"""
+    
+    class_wise_metrics: true
+    """Track and log metrics separately per class"""
+    
+    aggregation_strategy: "mean"
+    """How to aggregate metrics: 'mean', 'median', 'sum'"""
+  
+  # Split-Aware Data Loading
+  split_aware_loading: true
+  """Enable split-aware data loading (train/val/test from image['split'])"""
+  
+  # Preserve Annotation Attributes
+  preserve_attributes: true
+  """Preserve annotation attributes and metadata from new COCO schema"""
+
+# ============================================================================
+# EXAMPLE: Minimal Configuration (Just Class Imbalance)
+# ============================================================================
+
+# enhanced_training:
+#   class_imbalance:
+#     enabled: true
+#     strategy: "weighted_sampling"
+#   per_iteration_validation:
+#     enabled: false
+#   visualization:
+#     enabled: false
+#   enhanced_logging:
+#     enabled: false
+
+# ============================================================================
+# EXAMPLE: Full Configuration (All Features Enabled)
+# ============================================================================
+
+# enhanced_training:
+#   class_imbalance:
+#     enabled: true
+#     strategy: "weighted_sampling"
+#     weight_power: 1.5
+#     analyze_statistics: true
+#   
+#   per_iteration_validation:
+#     enabled: true
+#     frequency: 50
+#     num_batches: 5
+#     log_metrics: true
+#   
+#   visualization:
+#     enabled: true
+#     frequency: 100
+#     num_samples: 8
+#     save_dir: "./outputs/visualizations"
+#     overlay_alpha: 0.7
+#     draw_bboxes: true
+#     draw_centroids: true
+#   
+#   enhanced_logging:
+#     enabled: true
+#     log_every_n_iterations: 50
+#     class_wise_metrics: true
+#     aggregation_strategy: "mean"
+#   
+#   split_aware_loading: true
+#   preserve_attributes: true
+
+# ============================================================================
+# DATA CONFIGURATION with Enhanced Schema Support
+# ============================================================================
+
+data:
+  train:
+    annotation_file: "path/to/coco_train.json"
+    # Optional: Split-aware loading
+    # target_split: "train"
+    # Optional: Class imbalance strategy
+    # class_imbalance_strategy: "weighted_sampling"
+  
+  val:
+    annotation_file: "path/to/coco_val.json"
+    # target_split: "val"
+
+# ============================================================================
+# NOTES ON USING ENHANCED FEATURES
+# ============================================================================
+
+# 1. CLASS IMBALANCE HANDLING
+#    - Set enabled: true to activate
+#    - Choose strategy based on your imbalance ratio
+#    - weight_power > 1.0 for more aggressive handling
+#    - analyze_statistics: true to get detailed reports
+
+# 2. PER-ITERATION VALIDATION
+#    - Useful for monitoring convergence during long training runs
+#    - Set frequency to 5-10% of total iterations
+#    - Increase num_batches for more thorough validation (more time)
+#    - Decrease num_batches for faster validation (less accurate)
+
+# 3. VISUALIZATION
+#    - Generates plots showing predictions vs ground truth
+#    - Helps identify overfitting or failure modes
+#    - Save to disk and review periodically
+#    - Can be memory intensive - increase frequency if memory issues
+
+# 4. ENHANCED LOGGING
+#    - Aggregates per-iteration metrics instead of per-image
+#    - Reduces tensorboard event file size
+#    - class_wise_metrics helps identify problematic classes
+#    - Improves logging readability
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# High memory usage:
+#   - Reduce num_batches in per_iteration_validation
+#   - Increase frequency in visualization to run less often
+#   - Disable visualization if not needed
+
+# Slow training:
+#   - Increase frequency for all validation/visualization checks
+#   - Reduce num_samples in visualization
+#   - Disable class_wise_metrics if not needed
+
+# Class imbalance not working:
+#   - Check enabled: true in config
+#   - Verify class weights are > 0
+#   - Check that loss function supports weighting
+#   - Run analysis to verify imbalance detection

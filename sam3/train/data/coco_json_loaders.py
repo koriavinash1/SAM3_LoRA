@@ -1,8 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates. All Rights Reserved
 
 import json
-from collections import defaultdict
-from typing import Dict, List, Tuple
+from collections import defaultdict, Counter
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from pycocotools import mask as mask_util
@@ -103,6 +103,7 @@ class COCO_FROM_JSON:
     """
     COCO training API for loading box-only annotations from JSON.
     Groups all annotations per image and creates queries per category.
+    Supports enhanced schema with split, attributes, and metadata.
     """
 
     def __init__(
@@ -111,6 +112,8 @@ class COCO_FROM_JSON:
         prompts=None,
         include_negatives=True,
         category_chunk_size=None,
+        target_split: Optional[str] = None,
+        class_imbalance_strategy: Optional[str] = None,
     ):
         """
         Initialize the COCO training API.
@@ -119,6 +122,12 @@ class COCO_FROM_JSON:
             annotation_file (str): Path to COCO JSON annotation file
             prompts: Optional custom prompts for categories
             include_negatives (bool): Whether to include negative examples (categories with no instances)
+            category_chunk_size (int): Number of categories to process per datapoint
+            target_split (str): Filter to specific split (e.g., 'train', 'val', 'test'). If None, use all images.
+            class_imbalance_strategy (str): Strategy for handling class imbalance:
+                - None: No special handling
+                - 'weighted_sampling': Weight sampling by inverse class frequency
+                - 'focal': Use focal loss (requires model support)
         """
         self._raw_data, self._cat_idx_to_text = load_coco_and_group_by_image(
             annotation_file
@@ -126,6 +135,19 @@ class COCO_FROM_JSON:
         self._sorted_cat_ids = sorted(list(self._cat_idx_to_text.keys()))
         self.prompts = None
         self.include_negatives = include_negatives
+        self.target_split = target_split
+        self.class_imbalance_strategy = class_imbalance_strategy
+        
+        # Filter by split if specified
+        if target_split is not None:
+            self._raw_data = [
+                item for item in self._raw_data 
+                if item["image"].get("split", "unknown") == target_split
+            ]
+        
+        # Compute class weights for imbalance handling
+        self._compute_class_weights()
+        
         self.category_chunk_size = (
             category_chunk_size
             if category_chunk_size is not None
@@ -144,9 +166,32 @@ class COCO_FROM_JSON:
                 self._sorted_cat_ids
             ), "Number of prompts must match number of categories"
 
+    def _compute_class_weights(self):
+        """Compute class weights for handling imbalance."""
+        class_counts = Counter()
+        for item in self._raw_data:
+            for ann in item["annotations"]:
+                class_counts[ann["category_id"]] += 1
+        
+        self.class_weights = {}
+        total_instances = sum(class_counts.values()) if class_counts else 1
+        
+        for cat_id in self._sorted_cat_ids:
+            count = class_counts.get(cat_id, 1)
+            if self.class_imbalance_strategy == "weighted_sampling":
+                # Weight inversely proportional to frequency
+                self.class_weights[cat_id] = total_instances / (len(self._sorted_cat_ids) * count)
+            else:
+                self.class_weights[cat_id] = 1.0
+
+    def getClassWeights(self) -> Dict[int, float]:
+        """Return class weights for loss computation."""
+        return self.class_weights
+
     def getDatapointIds(self):
         """Return all datapoint indices for training."""
         return list(range(len(self._raw_data) * len(self.category_chunks)))
+
 
     def loadQueriesAndAnnotationsFromDatapoint(self, idx):
         """
@@ -188,6 +233,8 @@ class COCO_FROM_JSON:
             "object_id": None,
             "is_crowd": None,
             "id": None,
+            "attributes": None,  # Preserve annotation attributes (label_l1, label_l2, etc.)
+            "metadata": None,  # Preserve full row metadata
         }
 
         raw_annotations = self._raw_data[img_idx]["annotations"]
@@ -232,6 +279,14 @@ class COCO_FROM_JSON:
                     annotation["segmentation"] = ann_to_rle(
                         ann["segmentation"], im_info=image_info
                     )
+                
+                # Preserve attributes from the new schema
+                if "attributes" in ann:
+                    annotation["attributes"] = ann["attributes"]
+                
+                # Preserve metadata from the new schema
+                if "metadata" in ann:
+                    annotation["metadata"] = ann["metadata"]
 
                 annotations.append(annotation)
                 cur_ann_ids.append(annotation["id"])
@@ -268,6 +323,9 @@ class COCO_FROM_JSON:
                 "file_name": img_data["file_name"],
                 "original_img_id": img_data["id"],
                 "coco_img_id": img_data["id"],
+                "split": img_data.get("split", "unknown"),  # Include split information
+                "seq_id": img_data.get("seq_id"),  # Include sequence ID if present
+                "frame_id": img_data.get("frame_id"),  # Include frame ID if present
             }
         ]
         return images
